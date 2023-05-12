@@ -1,0 +1,15 @@
+{
+  "name": "twitter-automation",
+  "version": "1.0.0",
+  "description": "",
+  "main": "twitterbot.js",
+  "scripts": {
+    "run":"start dev",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "playwright": "^1.33.0"
+  }
+}
