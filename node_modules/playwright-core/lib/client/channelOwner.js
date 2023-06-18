@@ -10,7 +10,6 @@ var _debugLogger = require("../common/debugLogger");
 var _stackTrace = require("../utils/stackTrace");
 var _utils = require("../utils");
 var _zones = require("../utils/zones");
-var _locatorGenerators = require("../utils/isomorphic/locatorGenerators");
 /**
  * Copyright (c) Microsoft Corporation.
  *
@@ -28,8 +27,7 @@ var _locatorGenerators = require("../utils/isomorphic/locatorGenerators");
  */
 
 class ChannelOwner extends _events.EventEmitter {
-  constructor(parent, type, guid, initializer, instrumentation) {
-    var _this$_parent;
+  constructor(parent, type, guid, initializer) {
     super();
     this._connection = void 0;
     this._parent = void 0;
@@ -46,7 +44,7 @@ class ChannelOwner extends _events.EventEmitter {
     this._type = type;
     this._guid = guid;
     this._parent = parent instanceof ChannelOwner ? parent : undefined;
-    this._instrumentation = instrumentation || ((_this$_parent = this._parent) === null || _this$_parent === void 0 ? void 0 : _this$_parent._instrumentation);
+    this._instrumentation = this._connection._instrumentation;
     this._connection._objects.set(guid, this);
     if (this._parent) {
       this._parent._objects.set(guid, this);
@@ -60,10 +58,14 @@ class ChannelOwner extends _events.EventEmitter {
   }
   _updateSubscription(event, enabled) {
     const protocolEvent = this._eventToSubscriptionMapping.get(String(event));
-    if (protocolEvent) this._channel.updateSubscription({
-      event: protocolEvent,
-      enabled
-    }).catch(() => {});
+    if (protocolEvent) {
+      this._wrapApiCall(async () => {
+        await this._channel.updateSubscription({
+          event: protocolEvent,
+          enabled
+        });
+      }, true).catch(() => {});
+    }
   }
   on(event, listener) {
     if (!this.listenerCount(event)) this._updateSubscription(event, true);
@@ -130,7 +132,7 @@ class ChannelOwner extends _events.EventEmitter {
                   wallTime: undefined
                 } : apiZone;
                 apiZone.reported = true;
-                if (csi && stackTrace && stackTrace.apiName) csi.onApiCallBegin(renderCallWithParams(stackTrace.apiName, params), stackTrace, wallTime, callCookie);
+                if (csi && stackTrace && stackTrace.apiName) csi.onApiCallBegin(stackTrace.apiName, params, stackTrace, wallTime, callCookie);
                 return this._connection.sendMessageToServer(this, this._type, prop, validator(params, '', {
                   tChannelImpl: tChannelImplToWire,
                   binary: this._connection.isRemote() ? 'toBase64' : 'buffer'
@@ -151,6 +153,7 @@ class ChannelOwner extends _events.EventEmitter {
     const apiZone = _zones.zones.zoneData('apiZone', stack);
     if (apiZone) return func(apiZone);
     const stackTrace = (0, _stackTrace.captureLibraryStackTrace)(stack);
+    isInternal = isInternal || this._type === 'LocalUtils';
     if (isInternal) delete stackTrace.apiName;
 
     // Enclosing zone could have provided the apiName and wallTime.
@@ -211,27 +214,6 @@ function logApiCall(logger, message, isNested) {
     color: 'cyan'
   });
   _debugLogger.debugLogger.log('api', message);
-}
-const paramsToRender = ['url', 'selector', 'text', 'key'];
-function renderCallWithParams(apiName, params) {
-  const paramsArray = [];
-  if (params) {
-    for (const name of paramsToRender) {
-      if (!(name in params)) continue;
-      let value;
-      if (name === 'selector' && (0, _utils.isString)(params[name]) && params[name].startsWith('internal:')) {
-        const getter = (0, _locatorGenerators.asLocator)('javascript', params[name], false, true);
-        apiName = apiName.replace(/^locator\./, 'locator.' + getter + '.');
-        apiName = apiName.replace(/^page\./, 'page.' + getter + '.');
-        apiName = apiName.replace(/^frame\./, 'frame.' + getter + '.');
-      } else {
-        value = params[name];
-        paramsArray.push(value);
-      }
-    }
-  }
-  const paramsText = paramsArray.length ? '(' + paramsArray.join(', ') + ')' : '';
-  return apiName + paramsText;
 }
 function tChannelImplToWire(names, arg, path, context) {
   if (arg._object instanceof ChannelOwner && (names === '*' || names.includes(arg._object._type))) return {

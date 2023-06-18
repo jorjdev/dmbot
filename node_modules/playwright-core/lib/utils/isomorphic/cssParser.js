@@ -34,6 +34,12 @@ function isInvalidSelectorError(error) {
 
 // Note: '>=' is used internally for text engine to preserve backwards compatibility.
 
+// TODO: consider
+//   - key=value
+//   - operators like `=`, `|=`, `~=`, `*=`, `/`
+//   - <empty>~=value
+//   - argument modes: "parse all", "parse commas", "just a string"
+
 function parseCSS(selector, customNames) {
   let tokens;
   try {

@@ -12,6 +12,7 @@ var _frames = require("./frames");
 var _browserContext = require("./browserContext");
 var _java = require("./recorder/java");
 var _javascript = require("./recorder/javascript");
+var _jsonl = require("./recorder/jsonl");
 var _csharp = require("./recorder/csharp");
 var _python = require("./recorder/python");
 var recorderSource = _interopRequireWildcard(require("../generated/recorderSource"));
@@ -153,7 +154,7 @@ class Recorder {
         actionPoint,
         actionSelector,
         language: this._currentLanguage,
-        testIdAttributeName: this._context.selectors().testIdAttributeName()
+        testIdAttributeName: this._contextRecorder.testIdAttributeName()
       };
       return uiState;
     });
@@ -209,7 +210,7 @@ class Recorder {
     this._contextRecorder.setOutput(codegenId, outputFile);
   }
   _refreshOverlay() {
-    for (const page of this._context.pages()) page.mainFrame().evaluateExpression('window.__pw_refreshOverlay()', false, undefined, 'main').catch(() => {});
+    for (const page of this._context.pages()) page.mainFrame().evaluateExpression('window.__pw_refreshOverlay()').catch(() => {});
   }
   async onBeforeCall(sdkObject, metadata) {
     if (this._omitCallTracking || this._mode === 'recording') return;
@@ -316,12 +317,11 @@ class ContextRecorder extends _events.EventEmitter {
     this._recorderSources = void 0;
     this._throttledOutputFile = null;
     this._orderedLanguages = [];
-    this._testIdAttributeName = 'data-testid';
     this._listeners = [];
     this._context = context;
     this._params = params;
     this._recorderSources = [];
-    const language = params.language || context._browser.options.sdkLanguage;
+    const language = params.language || context.attribution.playwright.options.sdkLanguage;
     this.setOutput(language, params.outputFile);
     const generator = new _codeGenerator.CodeGenerator(context._browser.options.name, params.mode === 'recording', params.launchOptions || {}, params.contextOptions || {}, params.device, params.saveStorage);
     generator.on('change', () => {
@@ -367,7 +367,7 @@ class ContextRecorder extends _events.EventEmitter {
   }
   setOutput(codegenId, outputFile) {
     var _this$_generator;
-    const languages = new Set([new _java.JavaLanguageGenerator(), new _javascript.JavaScriptLanguageGenerator( /* isPlaywrightTest */false), new _javascript.JavaScriptLanguageGenerator( /* isPlaywrightTest */true), new _python.PythonLanguageGenerator( /* isAsync */false, /* isPytest */true), new _python.PythonLanguageGenerator( /* isAsync */false, /* isPytest */false), new _python.PythonLanguageGenerator( /* isAsync */true, /* isPytest */false), new _csharp.CSharpLanguageGenerator('mstest'), new _csharp.CSharpLanguageGenerator('nunit'), new _csharp.CSharpLanguageGenerator('library')]);
+    const languages = new Set([new _java.JavaLanguageGenerator(), new _javascript.JavaScriptLanguageGenerator( /* isPlaywrightTest */false), new _javascript.JavaScriptLanguageGenerator( /* isPlaywrightTest */true), new _python.PythonLanguageGenerator( /* isAsync */false, /* isPytest */true), new _python.PythonLanguageGenerator( /* isAsync */false, /* isPytest */false), new _python.PythonLanguageGenerator( /* isAsync */true, /* isPytest */false), new _csharp.CSharpLanguageGenerator('mstest'), new _csharp.CSharpLanguageGenerator('nunit'), new _csharp.CSharpLanguageGenerator('library'), new _jsonl.JsonlLanguageGenerator()]);
     const primaryLanguage = [...languages].find(l => l.id === codegenId);
     if (!primaryLanguage) throw new Error(`\n===============================\nUnsupported language: '${codegenId}'\n===============================\n`);
     languages.delete(primaryLanguage);
@@ -384,6 +384,7 @@ class ContextRecorder extends _events.EventEmitter {
   async install() {
     this._context.on(_browserContext.BrowserContext.Events.Page, page => this._onPage(page));
     for (const page of this._context.pages()) this._onPage(page);
+    this._context.on(_browserContext.BrowserContext.Events.Dialog, dialog => this._onDialog(dialog.page()));
 
     // Input actions that potentially lead to navigation are intercepted on the page and are
     // performed by the Playwright.
@@ -419,7 +420,6 @@ class ContextRecorder extends _events.EventEmitter {
       if (event.isPublic) this._onFrameNavigated(frame, page);
     });
     page.on(_page.Page.Events.Download, () => this._onDownload(page));
-    page.on(_page.Page.Events.Dialog, () => this._onDialog(page));
     const suffix = this._pageAliases.size ? String(++this._lastPopupOrdinal) : '';
     const pageAlias = 'page' + suffix;
     this._pageAliases.set(page, pageAlias);
@@ -476,13 +476,18 @@ class ContextRecorder extends _events.EventEmitter {
     }
     return fallback;
   }
+  testIdAttributeName() {
+    return this._params.testIdAttributeName || this._context.selectors().testIdAttributeName() || 'data-testid';
+  }
   async _findFrameSelector(frame, parent) {
     try {
       const frameElement = await frame.frameElement();
       if (!frameElement) return;
       const utility = await parent._utilityContext();
       const injected = await utility.injectedScript();
-      const selector = await injected.evaluate((injected, element) => injected.generateSelector(element, this._testIdAttributeName), frameElement);
+      const selector = await injected.evaluate((injected, element) => {
+        return injected.generateSelector(element, '', true);
+      }, frameElement);
       return selector;
     } catch (e) {}
   }

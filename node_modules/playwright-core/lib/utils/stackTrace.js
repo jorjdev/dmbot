@@ -43,7 +43,7 @@ const addInternalStackPrefix = prefix => internalStackPrefixes.push(prefix);
 exports.addInternalStackPrefix = addInternalStackPrefix;
 function captureRawStack() {
   const stackTraceLimit = Error.stackTraceLimit;
-  Error.stackTraceLimit = 30;
+  Error.stackTraceLimit = 50;
   const error = new Error();
   const stack = error.stack || '';
   Error.stackTraceLimit = stackTraceLimit;

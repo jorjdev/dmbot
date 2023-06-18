@@ -33,6 +33,7 @@ var _fetch = require("./fetch");
 var _localUtils = require("./localUtils");
 var _tracing = require("./tracing");
 var _validator = require("../protocol/validator");
+var _clientInstrumentation = require("./clientInstrumentation");
 /**
  * Copyright (c) Microsoft Corporation.
  *
@@ -63,7 +64,7 @@ class DummyChannelOwner extends _channelOwner.ChannelOwner {}
 class Connection extends _events.EventEmitter {
   // Some connections allow resolving in-process dispatchers.
 
-  constructor(localUtils) {
+  constructor(localUtils, instrumentation) {
     super();
     this._objects = new Map();
     this.onmessage = message => {};
@@ -75,8 +76,10 @@ class Connection extends _events.EventEmitter {
     this._localUtils = void 0;
     this.toImpl = void 0;
     this._tracingCount = 0;
+    this._instrumentation = void 0;
     this._rootObject = new Root(this);
     this._localUtils = localUtils;
+    this._instrumentation = instrumentation || (0, _clientInstrumentation.createInstrumentation)();
   }
   markAsRemote() {
     this._isRemote = true;

@@ -12,9 +12,23 @@ var _utils = require("../utils");
 var _fileUtils = require("../utils/fileUtils");
 var _channelOwner = require("./channelOwner");
 var _network = require("./network");
-var _clientInstrumentation = require("./clientInstrumentation");
 var _tracing = require("./tracing");
 let _util$inspect$custom;
+/**
+ * Copyright (c) Microsoft Corporation.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 function _getRequireWildcardCache(nodeInterop) { if (typeof WeakMap !== "function") return null; var cacheBabelInterop = new WeakMap(); var cacheNodeInterop = new WeakMap(); return (_getRequireWildcardCache = function (nodeInterop) { return nodeInterop ? cacheNodeInterop : cacheBabelInterop; })(nodeInterop); }
 function _interopRequireWildcard(obj, nodeInterop) { if (!nodeInterop && obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(nodeInterop); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (key !== "default" && Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
@@ -25,12 +39,10 @@ class APIRequest {
     this._playwright = void 0;
     this._contexts = new Set();
     this._defaultContextOptions = void 0;
-    this._onDidCreateContext = void 0;
-    this._onWillCloseContext = void 0;
     this._playwright = playwright;
   }
   async newContext(options = {}) {
-    var _this$_defaultContext, _this$_onDidCreateCon;
+    var _this$_defaultContext;
     options = {
       ...this._defaultContextOptions,
       ...options
@@ -47,7 +59,7 @@ class APIRequest {
     this._contexts.add(context);
     context._request = this;
     context._tracing._tracesDir = tracesDir;
-    await ((_this$_onDidCreateCon = this._onDidCreateContext) === null || _this$_onDidCreateCon === void 0 ? void 0 : _this$_onDidCreateCon.call(this, context));
+    await context._instrumentation.onDidCreateRequestContext(context);
     return context;
   }
 }
@@ -57,16 +69,16 @@ class APIRequestContext extends _channelOwner.ChannelOwner {
     return channel._object;
   }
   constructor(parent, type, guid, initializer) {
-    super(parent, type, guid, initializer, (0, _clientInstrumentation.createInstrumentation)());
+    super(parent, type, guid, initializer);
     this._request = void 0;
     this._tracing = void 0;
     this._tracing = _tracing.Tracing.from(initializer.tracing);
   }
   async dispose() {
-    var _this$_request, _this$_request$_onWil, _this$_request2;
-    await ((_this$_request = this._request) === null || _this$_request === void 0 ? void 0 : (_this$_request$_onWil = _this$_request._onWillCloseContext) === null || _this$_request$_onWil === void 0 ? void 0 : _this$_request$_onWil.call(_this$_request, this));
+    var _this$_request;
+    await this._instrumentation.onWillCloseRequestContext(this);
     await this._channel.dispose();
-    (_this$_request2 = this._request) === null || _this$_request2 === void 0 ? void 0 : _this$_request2._contexts.delete(this);
+    (_this$_request = this._request) === null || _this$_request === void 0 ? void 0 : _this$_request._contexts.delete(this);
   }
   async delete(url, options) {
     return this.fetch(url, {

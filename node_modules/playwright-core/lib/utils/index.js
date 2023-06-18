@@ -289,3 +289,14 @@ Object.keys(_zones).forEach(function (key) {
     }
   });
 });
+var _locatorGenerators = require("./isomorphic/locatorGenerators");
+Object.keys(_locatorGenerators).forEach(function (key) {
+  if (key === "default" || key === "__esModule") return;
+  if (key in exports && exports[key] === _locatorGenerators[key]) return;
+  Object.defineProperty(exports, key, {
+    enumerable: true,
+    get: function () {
+      return _locatorGenerators[key];
+    }
+  });
+});

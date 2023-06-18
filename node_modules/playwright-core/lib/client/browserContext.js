@@ -22,9 +22,10 @@ var _cdpSession = require("./cdpSession");
 var _tracing = require("./tracing");
 var _artifact = require("./artifact");
 var _fetch = require("./fetch");
-var _clientInstrumentation = require("./clientInstrumentation");
 var _stackTrace = require("../utils/stackTrace");
 var _harRouter = require("./harRouter");
+var _consoleMessage = require("./consoleMessage");
+var _dialog = require("./dialog");
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 function _getRequireWildcardCache(nodeInterop) { if (typeof WeakMap !== "function") return null; var cacheBabelInterop = new WeakMap(); var cacheNodeInterop = new WeakMap(); return (_getRequireWildcardCache = function (nodeInterop) { return nodeInterop ? cacheNodeInterop : cacheBabelInterop; })(nodeInterop); }
 function _interopRequireWildcard(obj, nodeInterop) { if (!nodeInterop && obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(nodeInterop); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (key !== "default" && Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
@@ -54,7 +55,7 @@ class BrowserContext extends _channelOwner.ChannelOwner {
   }
   constructor(parent, type, guid, initializer) {
     var _this$_browser, _this$_browser2;
-    super(parent, type, guid, initializer, (0, _clientInstrumentation.createInstrumentation)());
+    super(parent, type, guid, initializer);
     this._pages = new Set();
     this._routes = [];
     this._browser = null;
@@ -101,6 +102,29 @@ class BrowserContext extends _channelOwner.ChannelOwner {
       this._serviceWorkers.add(serviceWorker);
       this.emit(_events.Events.BrowserContext.ServiceWorker, serviceWorker);
     });
+    this._channel.on('console', ({
+      message
+    }) => {
+      const consoleMessage = _consoleMessage.ConsoleMessage.from(message);
+      this.emit(_events.Events.BrowserContext.Console, consoleMessage);
+      const page = consoleMessage.page();
+      if (page) page.emit(_events.Events.Page.Console, consoleMessage);
+    });
+    this._channel.on('dialog', ({
+      dialog
+    }) => {
+      const dialogObject = _dialog.Dialog.from(dialog);
+      let hasListeners = this.emit(_events.Events.BrowserContext.Dialog, dialogObject);
+      const page = dialogObject.page();
+      if (page) hasListeners = page.emit(_events.Events.Page.Dialog, dialogObject) || hasListeners;
+      if (!hasListeners) {
+        // Although we do similar handling on the server side, we still need this logic
+        // on the client side due to a possible race condition between two async calls:
+        // a) removing "dialog" listener subscription (client->server)
+        // b) actual "dialog" event (server->client)
+        if (dialogObject.type() === 'beforeunload') dialog.accept({}).catch(() => {});else dialog.dismiss().catch(() => {});
+      }
+    });
     this._channel.on('request', ({
       request,
       page
@@ -117,7 +141,7 @@ class BrowserContext extends _channelOwner.ChannelOwner {
       page
     }) => this._onResponse(network.Response.from(response), _page.Page.fromNullable(page)));
     this._closedPromise = new Promise(f => this.once(_events.Events.BrowserContext.Close, f));
-    this._setEventToSubscriptionMapping(new Map([[_events.Events.BrowserContext.Request, 'request'], [_events.Events.BrowserContext.Response, 'response'], [_events.Events.BrowserContext.RequestFinished, 'requestFinished'], [_events.Events.BrowserContext.RequestFailed, 'requestFailed']]));
+    this._setEventToSubscriptionMapping(new Map([[_events.Events.BrowserContext.Console, 'console'], [_events.Events.BrowserContext.Dialog, 'dialog'], [_events.Events.BrowserContext.Request, 'request'], [_events.Events.BrowserContext.Response, 'response'], [_events.Events.BrowserContext.RequestFinished, 'requestFinished'], [_events.Events.BrowserContext.RequestFailed, 'requestFailed']]));
   }
   _setOptions(contextOptions, browserOptions) {
     this._options = contextOptions;
@@ -298,7 +322,7 @@ class BrowserContext extends _channelOwner.ChannelOwner {
     harRouter.addContextRoute(this);
   }
   async unroute(url, handler) {
-    this._routes = this._routes.filter(route => route.url !== url || handler && route.handler !== handler);
+    this._routes = this._routes.filter(route => !(0, _utils.urlMatchesEqual)(route.url, url) || handler && route.handler !== handler);
     await this._updateInterceptionPatterns();
   }
   async _updateInterceptionPatterns() {

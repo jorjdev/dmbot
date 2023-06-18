@@ -16,9 +16,7 @@ var _accessibility = require("./accessibility");
 var _artifact = require("./artifact");
 var _channelOwner = require("./channelOwner");
 var _clientHelper = require("./clientHelper");
-var _consoleMessage = require("./consoleMessage");
 var _coverage = require("./coverage");
-var _dialog = require("./dialog");
 var _download = require("./download");
 var _elementHandle = require("./elementHandle");
 var _events = require("./events");
@@ -94,18 +92,7 @@ class Page extends _channelOwner.ChannelOwner {
       binding
     }) => this._onBinding(BindingCall.from(binding)));
     this._channel.on('close', () => this._onClose());
-    this._channel.on('console', ({
-      message
-    }) => this.emit(_events.Events.Page.Console, _consoleMessage.ConsoleMessage.from(message)));
     this._channel.on('crash', () => this._onCrash());
-    this._channel.on('dialog', ({
-      dialog
-    }) => {
-      const dialogObj = _dialog.Dialog.from(dialog);
-      if (!this.emit(_events.Events.Page.Dialog, dialogObj)) {
-        if (dialogObj.type() === 'beforeunload') dialog.accept({}).catch(() => {});else dialog.dismiss().catch(() => {});
-      }
-    });
     this._channel.on('download', ({
       url,
       suggestedFilename,
@@ -145,7 +132,7 @@ class Page extends _channelOwner.ChannelOwner {
     this.coverage = new _coverage.Coverage(this._channel);
     this.once(_events.Events.Page.Close, () => this._closedOrCrashedRace.scopeClosed(new Error(_errors.kBrowserOrContextClosedError)));
     this.once(_events.Events.Page.Crash, () => this._closedOrCrashedRace.scopeClosed(new Error(_errors.kBrowserOrContextClosedError)));
-    this._setEventToSubscriptionMapping(new Map([[_events.Events.Page.Request, 'request'], [_events.Events.Page.Response, 'response'], [_events.Events.Page.RequestFinished, 'requestFinished'], [_events.Events.Page.RequestFailed, 'requestFailed'], [_events.Events.Page.FileChooser, 'fileChooser']]));
+    this._setEventToSubscriptionMapping(new Map([[_events.Events.Page.Console, 'console'], [_events.Events.Page.Dialog, 'dialog'], [_events.Events.Page.Request, 'request'], [_events.Events.Page.Response, 'response'], [_events.Events.Page.RequestFinished, 'requestFinished'], [_events.Events.Page.RequestFailed, 'requestFailed'], [_events.Events.Page.FileChooser, 'fileChooser']]));
   }
   _onFrameAttached(frame) {
     frame._page = this;
@@ -416,7 +403,7 @@ class Page extends _channelOwner.ChannelOwner {
     harRouter.addPageRoute(this);
   }
   async unroute(url, handler) {
-    this._routes = this._routes.filter(route => route.url !== url || handler && route.handler !== handler);
+    this._routes = this._routes.filter(route => !(0, _utils.urlMatchesEqual)(route.url, url) || handler && route.handler !== handler);
     await this._updateInterceptionPatterns();
   }
   async _updateInterceptionPatterns() {
@@ -595,8 +582,16 @@ class Page extends _channelOwner.ChannelOwner {
     return [...this._workers];
   }
   async pause() {
+    var _this$_instrumentatio;
     if (require('inspector').url()) return;
+    const defaultNavigationTimeout = this._browserContext._timeoutSettings.defaultNavigationTimeout();
+    const defaultTimeout = this._browserContext._timeoutSettings.defaultTimeout();
+    this._browserContext.setDefaultNavigationTimeout(0);
+    this._browserContext.setDefaultTimeout(0);
+    (_this$_instrumentatio = this._instrumentation) === null || _this$_instrumentatio === void 0 ? void 0 : _this$_instrumentatio.onWillPause();
     await this._closedOrCrashedRace.safeRace(this.context()._channel.pause());
+    this._browserContext.setDefaultNavigationTimeout(defaultNavigationTimeout);
+    this._browserContext.setDefaultTimeout(defaultTimeout);
   }
   async pdf(options = {}) {
     const transportOptions = {

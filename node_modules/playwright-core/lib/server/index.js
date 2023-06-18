@@ -45,6 +45,12 @@ Object.defineProperty(exports, "installDefaultBrowsersForNpmInstall", {
     return _registry.installDefaultBrowsersForNpmInstall;
   }
 });
+Object.defineProperty(exports, "openTraceViewerApp", {
+  enumerable: true,
+  get: function () {
+    return _traceViewer.openTraceViewerApp;
+  }
+});
 Object.defineProperty(exports, "registry", {
   enumerable: true,
   get: function () {

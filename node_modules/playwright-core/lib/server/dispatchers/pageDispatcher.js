@@ -7,8 +7,6 @@ exports.WorkerDispatcher = exports.PageDispatcher = exports.BindingCallDispatche
 var _page = require("../page");
 var _dispatcher = require("./dispatcher");
 var _serializers = require("../../protocol/serializers");
-var _consoleMessageDispatcher = require("./consoleMessageDispatcher");
-var _dialogDispatcher = require("./dialogDispatcher");
 var _frameDispatcher = require("./frameDispatcher");
 var _networkDispatchers = require("./networkDispatchers");
 var _jsHandleDispatcher = require("./jsHandleDispatcher");
@@ -62,13 +60,7 @@ class PageDispatcher extends _dispatcher.Dispatcher {
       this._dispatchEvent('close');
       this._dispose();
     });
-    this.addObjectListener(_page.Page.Events.Console, message => this._dispatchEvent('console', {
-      message: new _consoleMessageDispatcher.ConsoleMessageDispatcher(this, message)
-    }));
     this.addObjectListener(_page.Page.Events.Crash, () => this._dispatchEvent('crash'));
-    this.addObjectListener(_page.Page.Events.Dialog, dialog => this._dispatchEvent('dialog', {
-      dialog: new _dialogDispatcher.DialogDispatcher(this, dialog)
-    }));
     this.addObjectListener(_page.Page.Events.Download, download => {
       // Artifact can outlive the page, so bind to the context scope.
       this._dispatchEvent('download', {
@@ -113,6 +105,9 @@ class PageDispatcher extends _dispatcher.Dispatcher {
   }
   async exposeBinding(params, metadata) {
     await this._page.exposeBinding(params.name, !!params.needsHandle, (source, ...args) => {
+      // When reusing the context, we might have some bindings called late enough,
+      // after context and page dispatchers have been disposed.
+      if (this._disposed) return;
       const binding = new BindingCallDispatcher(this, params.name, !!params.needsHandle, source, args);
       this._dispatchEvent('bindingCall', {
         binding

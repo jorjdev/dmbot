@@ -43,10 +43,12 @@ function runDriver() {
   new _server.RootDispatcher(dispatcherConnection, async (rootScope, {
     sdkLanguage
   }) => {
-    const playwright = (0, _server.createPlaywright)(sdkLanguage);
+    const playwright = (0, _server.createPlaywright)({
+      sdkLanguage
+    });
     return new _server.PlaywrightDispatcher(rootScope, playwright);
   });
-  const transport = process.send ? new _transport.IpcTransport(process) : new _transport.PipeTransport(process.stdout, process.stdin);
+  const transport = new _transport.PipeTransport(process.stdout, process.stdin);
   transport.onmessage = message => dispatcherConnection.dispatch(JSON.parse(message));
   dispatcherConnection.onmessage = message => transport.send(JSON.stringify(message));
   transport.onclose = () => {
@@ -54,14 +56,21 @@ function runDriver() {
     dispatcherConnection.onmessage = () => {};
     selfDestruct();
   };
+  // Ignore the SIGINT signal in the driver process so the parent can gracefully close the connection.
+  // We still will destruct everything (close browsers and exit) when the transport pipe closes.
+  process.on('SIGINT', () => {
+    // Keep the process running.
+  });
 }
 async function runServer(options) {
   const {
     port,
     path = '/',
-    maxConnections = Infinity
+    maxConnections = Infinity,
+    extension
   } = options;
   const server = new _playwrightServer.PlaywrightServer({
+    mode: extension ? 'extension' : 'default',
     path,
     maxConnections
   });

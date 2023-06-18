@@ -28,24 +28,16 @@ export default class VerificationMailChecker {
     this.result = null; // Initialize result as null
   }
 
-  private openSpamAndInboxFolders(): Promise<Mailbox> {
+  private openMailbox(mailboxName: string): Promise<Imap.MailBox> {
     return new Promise((resolve, reject) => {
-      this.imap.openBox("Spam", true, (error, spamMailbox) => {
+      this.imap.openBox(mailboxName, true, (error, mailbox) => {
         if (error) {
-          console.error("Error opening spam folder:", error);
+          console.error(`Error opening ${mailboxName} folder:`, error);
           reject(error);
           return;
         }
 
-        this.imap.openBox("INBOX", true, (error, inboxMailbox) => {
-          if (error) {
-            console.error("Error opening inbox folder:", error);
-            reject(error);
-            return;
-          }
-
-          resolve({ spamMailbox, inboxMailbox });
-        });
+        resolve(mailbox);
       });
     });
   }
@@ -55,7 +47,7 @@ export default class VerificationMailChecker {
       const fetch = this.imap.seq.fetch("1:*", fetchOptions);
       const matchingEmails: EmailResult[] = [];
 
-      const processEmail = (message: Imap.ImapMessage, sequenceNumber: number, mailbox: string) => {
+      const processEmail = (message: Imap.ImapMessage, sequenceNumber: number) => {
         message.on("body", (stream, info) => {
           let buffer = "";
 
@@ -86,7 +78,7 @@ export default class VerificationMailChecker {
       };
 
       fetch.on("message", (message: Imap.ImapMessage, sequenceNumber: number) => {
-        processEmail(message, sequenceNumber, mailbox);
+        processEmail(message, sequenceNumber);
       });
 
       fetch.on("error", (error: Error) => {
@@ -100,41 +92,29 @@ export default class VerificationMailChecker {
     });
   }
 
-  public processEmails(): Promise<void> {
-    return this.openSpamAndInboxFolders()
-      .then(({ spamMailbox, inboxMailbox }) => {
-        const spamFetchOptions: Imap.FetchOptions = {
+  public processEmails(mailboxName: string): Promise<void> {
+    return this.openMailbox(mailboxName)
+      .then((mailbox) => {
+        const fetchOptions: Imap.FetchOptions = {
           bodies: ["HEADER.FIELDS (SUBJECT)"],
           markSeen: false,
           struct: true,
-          source: "Spam",
+          source: mailboxName,
         };
-  
-        const spamFetch = this.fetchEmails(spamMailbox, spamFetchOptions);
-  
-        const inboxFetchOptions: Imap.FetchOptions = {
-          bodies: ["HEADER.FIELDS (SUBJECT)"],
-          markSeen: false,
-          struct: true,
-        };
-  
-        const inboxFetch = this.fetchEmails(inboxMailbox, inboxFetchOptions);
-  
-        return Promise.all([spamFetch, inboxFetch])
-          .then(([spamMatchingEmails, inboxMatchingEmails]) => {
-            const combinedMatchingEmails = [...spamMatchingEmails, ...inboxMatchingEmails];
-  
-            if (combinedMatchingEmails.length > 0) {
-              combinedMatchingEmails.sort((a, b) => b.sequenceNumber - a.sequenceNumber);
-  
-              const latestEmail = combinedMatchingEmails[0];
+
+        return this.fetchEmails(mailbox, fetchOptions)
+          .then((matchingEmails) => {
+            if (matchingEmails.length > 0) {
+              matchingEmails.sort((a, b) => b.sequenceNumber - a.sequenceNumber);
+
+              const latestEmail = matchingEmails[0];
               this.result = latestEmail.result; // Store the result in the instance variable
-  
+
               console.log("Latest Email Result:", this.result);
             } else {
               console.log("No emails found with the specified subject");
             }
-  
+
             this.imap.end();
           });
       })
@@ -142,15 +122,14 @@ export default class VerificationMailChecker {
         console.error("Error processing emails:", error);
       });
   }
-  
 
-  public connect(): void {
+  public connect(mailbox: "INBOX" | "Spam"): void {
     this.imap.connect();
 
     this.imap.on("ready", () => {
       console.log("Connected to GMX mailbox");
       setTimeout(() => {
-        this.processEmails();
+        this.processEmails(mailbox);
       }, 5000); // Delay of 5 seconds before starting email processing
     });
 

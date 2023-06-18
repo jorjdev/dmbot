@@ -20,7 +20,7 @@ import {
   ACCEPT_ALL_COOKIES,
 } from "./constants";
 
-class TwitterBot {
+class Scrapper {
   randomDelay = async (min, max) => {
     const delay = Math.random() * (max - min) + min;
     return new Promise((resolve) => setTimeout(resolve, delay));
@@ -37,26 +37,15 @@ class TwitterBot {
 
   simulateHumanTyping = async (page, selector, text) => {
     const element = await page.$(selector);
-    await element.click();
-
-    for (let i = 0; i < text.length; i++) {
-      await page.keyboard.type(text[i]);
-
-      await this.randomDelay(400, 550);
-    }
+    await element.fill(text);
   };
 
-  mockUserList = [
-    "@jorj022799",
-    "@jorj022799",
-    "@jorj022799",
-    "@jorj022799",
-    "@jorj022799",
-    "@jorj022799",
-    "@jorj022799",
-  ];
+  scrollPageToBottom = async (page) => {
+    page;
+    this.randomDelay(2000, 2500);
+  };
 
-  send = async (email, password, message, username) => {
+  scrapeTwitterFollowers = async (email, password, username, targetUser) => {
     const verifier = new VerificationMailChecker(email, password);
     try {
       const browser = await webkit.launch({ headless: false });
@@ -139,35 +128,32 @@ class TwitterBot {
           await page.locator(NEXT_BUTTON_TEXT).click();
           await page.locator(MESSAGES_BUTTON).click();
         });
+      await page.goto(`https://twitter.com/${targetUser}/followers`);
 
-      await page.waitForSelector(NEW_DM_BUTTON);
+      await page.waitForSelector(`text=@${targetUser}`);
       await page.locator(ACCEPT_ALL_COOKIES).click();
-      for (let user of this.mockUserList) {
-        const elementLocator = page.locator(NEW_DM_BUTTON);
-        elementLocator.click();
+      await page.waitForLoadState("networkidle");
+      for (let i = 0; i < 1100; i++) {
+        await page.keyboard.press("Tab");
+        const focusedElement = await page.$(":focus");
+        const itemText = await focusedElement.textContent();
+        const atIndex = itemText.indexOf("@");
+        const followIndex = itemText.indexOf("Follow", atIndex);
 
-        await page.fill(SEARCH_USER_BUTTON, user);
-        await page.waitForSelector(USER_ELEMENT_IN_LIST);
-        const userList = await page.locator(USER_ELEMENT_IN_LIST);
-        await userList.nth(0).hover();
-        await page.waitForTimeout(500);
-        await userList.nth(0).click();
-        await page.locator(NEXT_BUTTON_TEXT).click();
+        if (atIndex !== -1 && followIndex !== -1) {
+          const extractedText = itemText
+            .substring(atIndex + 1, followIndex)
+            .trim();
+          console.log(extractedText);
+        }
 
-        const messageInput = page.locator(SEND_DM_FIELD);
-        await messageInput.click();
-        await this.simulateHumanTyping(page, SEND_DM_FIELD, message);
-
-        const submitButton = page.locator(SEND_DM_BUTTON);
-        await submitButton.click();
-
-        console.log("Message sent successfully!");
-        this.randomDelay(1000, 2000);
+        await this.randomDelay(100, 250);
       }
+
     } catch (err) {
-      console.error(ERROR_OCCURED, err);
+      console.error("An error occurred:", err);
     }
   };
 }
 
-export default TwitterBot;
+export default Scrapper;

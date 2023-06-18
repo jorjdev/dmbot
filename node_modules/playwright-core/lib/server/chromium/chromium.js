@@ -48,8 +48,8 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 
 const ARTIFACTS_FOLDER = _path.default.join(_os.default.tmpdir(), 'playwright-artifacts-');
 class Chromium extends _browserType.BrowserType {
-  constructor(playwrightOptions) {
-    super('chromium', playwrightOptions);
+  constructor(parent) {
+    super(parent, 'chromium');
     this._devtools = void 0;
     if ((0, _utils.debugMode)()) this._devtools = this._createDevTools();
   }
@@ -90,7 +90,6 @@ class Chromium extends _browserType.BrowserType {
       noDefaultViewport: true
     };
     const browserOptions = {
-      ...this._playwrightOptions,
       slowMo: options.slowMo,
       name: 'chromium',
       isChromium: true,
@@ -99,8 +98,8 @@ class Chromium extends _browserType.BrowserType {
       protocolLogger: _helper.helper.debugProtocolLogger(),
       browserLogsCollector: new _debugLogger.RecentLogsCollector(),
       artifactsDir,
-      downloadsPath: artifactsDir,
-      tracesDir: artifactsDir,
+      downloadsPath: options.downloadsPath || artifactsDir,
+      tracesDir: options.tracesDir || artifactsDir,
       // On Windows context level proxies only work, if there isn't a global proxy
       // set. This is currently a bug in the CR/Windows networking stack. By
       // passing an arbitrary value we disable the check in PW land which warns
@@ -113,7 +112,7 @@ class Chromium extends _browserType.BrowserType {
     };
     (0, _browserContext.validateBrowserContextOptions)(persistent, browserOptions);
     progress.throwIfAborted();
-    const browser = await _crBrowser.CRBrowser.connect(chromeTransport, browserOptions);
+    const browser = await _crBrowser.CRBrowser.connect(this.attribution.playwright, chromeTransport, browserOptions);
     browser.on(_browser.Browser.Events.Disconnected, doCleanup);
     return browser;
   }
@@ -128,7 +127,7 @@ class Chromium extends _browserType.BrowserType {
       devtools = this._createDevTools();
       await options.__testHookForDevTools(devtools);
     }
-    return _crBrowser.CRBrowser.connect(transport, options, devtools);
+    return _crBrowser.CRBrowser.connect(this.attribution.playwright, transport, options, devtools);
   }
   _rewriteStartupError(error) {
     if (error.message.includes('Missing X server')) return (0, _stackTrace.rewriteErrorMessage)(error, '\n' + (0, _ascii.wrapInASCIIBox)(_browserType.kNoXServerRunningError, 1));
@@ -149,6 +148,7 @@ class Chromium extends _browserType.BrowserType {
     transport.send(message);
   }
   async _launchWithSeleniumHub(progress, hubUrl, options) {
+    await this._createArtifactDirs(options);
     if (!hubUrl.endsWith('/')) hubUrl = hubUrl + '/';
     const args = this._innerDefaultArgs(options);
     args.push('--remote-debugging-port=0');
@@ -175,6 +175,9 @@ class Chromium extends _browserType.BrowserType {
     const response = await (0, _network.fetchData)({
       url: hubUrl + 'session',
       method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8'
+      },
       data: JSON.stringify({
         desiredCapabilities,
         capabilities: {
@@ -233,9 +236,7 @@ class Chromium extends _browserType.BrowserType {
           }
         }
       }
-      return await this._connectOverCDPInternal(progress, endpointURL.toString(), {
-        slowMo: options.slowMo
-      }, disconnectFromSelenium);
+      return await this._connectOverCDPInternal(progress, endpointURL.toString(), options, disconnectFromSelenium);
     } catch (e) {
       await disconnectFromSelenium();
       throw e;
@@ -266,21 +267,22 @@ class Chromium extends _browserType.BrowserType {
     }
     if (options.devtools) chromeArguments.push('--auto-open-devtools-for-tabs');
     if (options.headless) {
-      chromeArguments.push('--headless', '--hide-scrollbars', '--mute-audio', '--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4');
+      if (process.env.PLAYWRIGHT_CHROMIUM_USE_HEADLESS_NEW) chromeArguments.push('--headless=new');else chromeArguments.push('--headless');
+      chromeArguments.push('--hide-scrollbars', '--mute-audio', '--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4');
     }
     if (options.chromiumSandbox !== true) chromeArguments.push('--no-sandbox');
     if (proxy) {
       const proxyURL = new URL(proxy.server);
       const isSocks = proxyURL.protocol === 'socks5:';
       // https://www.chromium.org/developers/design-documents/network-settings
-      if (isSocks && !this._playwrightOptions.socksProxyPort) {
+      if (isSocks && !this.attribution.playwright.options.socksProxyPort) {
         // https://www.chromium.org/developers/design-documents/network-stack/socks-proxy
         chromeArguments.push(`--host-resolver-rules="MAP * ~NOTFOUND , EXCLUDE ${proxyURL.hostname}"`);
       }
       chromeArguments.push(`--proxy-server=${proxy.server}`);
       const proxyBypassRules = [];
       // https://source.chromium.org/chromium/chromium/src/+/master:net/docs/proxy.md;l=548;drc=71698e610121078e0d1a811054dcf9fd89b49578
-      if (this._playwrightOptions.socksProxyPort) proxyBypassRules.push('<-loopback>');
+      if (this.attribution.playwright.options.socksProxyPort) proxyBypassRules.push('<-loopback>');
       if (proxy.bypass) proxyBypassRules.push(...proxy.bypass.split(',').map(t => t.trim()).map(t => t.startsWith('.') ? '*' + t : t));
       if (!process.env.PLAYWRIGHT_DISABLE_FORCED_CHROMIUM_PROXIED_LOOPBACK && !proxyBypassRules.includes('<-loopback>')) proxyBypassRules.push('<-loopback>');
       if (proxyBypassRules.length > 0) chromeArguments.push(`--proxy-bypass-list=${proxyBypassRules.join(';')}`);

@@ -11,7 +11,8 @@
   "license": "ISC",
   "dependencies": {
     "imap": "^0.8.19",
-    "playwright": "^1.33.0"
+    "playwright": "^1.35.1",
+    "tslib": "^2.5.3"
   },
   "devDependencies": {
     "@types/node": "^20.1.3",
